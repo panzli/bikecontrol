@@ -11,7 +11,7 @@ jobs:
     name: Build Windows Executable
     runs-on: windows-latest
     env:
-      FLUTTER_VERSION: ${{ env.FLUTTER_VERSION }}
+      FLUTTER_VERSION: 3.38.7
 
     steps:
       - name: Checkout repository
@@ -98,7 +98,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bike_control-windows-${{ env.VERSION || 'unknown' }}
+          name: bike_control-windows-3.38.7
           path: |
             build/windows/x64/runner/Release/bike_control.windows.zip
             build/windows/x64/runner/Release/**
