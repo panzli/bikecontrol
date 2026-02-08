@@ -1,312 +1,78 @@
-name: "Build"
+name: Build Windows
 
 on:
-  workflow_dispatch:
-    inputs:
-      build_mac:
-        description: 'Build for macOS'
-        required: false
-        default: true
-        type: boolean
-      build_github:
-        description: 'Build for GitHub'
-        required: false
-        default: true
-        type: boolean
-      build_windows:
-        description: 'Build for Windows'
-        required: false
-        default: true
-        type: boolean
-      build_android:
-        description: 'Build for Android'
-        required: false
-        default: true
-        type: boolean
-      build_ios:
-        description: 'Build for iOS'
-        required: false
-        default: true
-        type: boolean
+  workflow_dispatch: {}
 
 env:
-  SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
-  FLUTTER_VERSION_MAC: 3.41.0-0.0.pre
   FLUTTER_VERSION: 3.38.7
 
 jobs:
-  build:
-    name: Build & Release
-    runs-on: macos-latest
-
-    permissions:
-      id-token: write
-      pages: write
-      contents: write
-
-    steps:
-      #1 Checkout Repository
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-
-      - name: rename pubspec_overrides_ci.yaml to pubspec_overrides.yaml
-        run: |
-            if [ -f pubspec_overrides_ci.yaml ]; then
-                mv pubspec_overrides_ci.yaml pubspec_overrides.yaml
-            else 
-                echo "No pubspec_overrides_ci.yaml found, skipping rename."
-            fi
-
-      - name: Install certificates
-        if: inputs.build_mac || inputs.build_ios
-        env:
-          DEVELOPER_ID_APPLICATION_P12_BASE64_MAC: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64_MAC }}
-          DEVELOPER_ID_INSTALLER_P12_BASE64_MAC: ${{ secrets.DEVELOPER_ID_INSTALLER_P12_BASE64_MAC }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          APPSTORE_PROFILE_IOS_BASE64: ${{ secrets.APPSTORE_PROFILE_IOS_BASE64 }}
-          APPSTORE_PROFILE_MACOS_BASE64: ${{ secrets.APPSTORE_PROFILE_MACOS_BASE64 }}
-          APPSTORE_PROFILE_DEV_IOS_BASE64: ${{ secrets.APPSTORE_PROFILE_DEV_IOS_BASE64 }}
-        run: |
-          # create variables
-          DEVELOPER_ID_APPLICATION_CERTIFICATE_PATH=$RUNNER_TEMP/build_developerID_application_certificate.p12
-          DEVELOPER_ID_INSTALLER_CERTIFICATE_PATH=$RUNNER_TEMP/build_developerID_installer_certificate.p12
-          PP_PATH_IOS=$RUNNER_TEMP/build_pp_ios.mobileprovision
-          PP_PATH_IOS_DEV=$RUNNER_TEMP/build_pp_ios_dev.mobileprovision
-          PP_PATH_MACOS=$RUNNER_TEMP/build_pp_macos.provisionprofile
-          KEYCHAIN_PATH=$RUNNER_TEMP/pg-signing.keychain-db
-          
-          # import certificate and provisioning profile from secrets
-          echo -n "$DEVELOPER_ID_APPLICATION_P12_BASE64_MAC" | base64 --decode --output $DEVELOPER_ID_APPLICATION_CERTIFICATE_PATH
-          echo -n "$DEVELOPER_ID_INSTALLER_P12_BASE64_MAC" | base64 --decode --output $DEVELOPER_ID_INSTALLER_CERTIFICATE_PATH
-          echo -n "$APPSTORE_PROFILE_IOS_BASE64" | base64 --decode -o $PP_PATH_IOS
-          echo -n "$APPSTORE_PROFILE_DEV_IOS_BASE64" | base64 --decode -o $PP_PATH_IOS_DEV
-          echo -n "$APPSTORE_PROFILE_MACOS_BASE64" | base64 --decode -o $PP_PATH_MACOS
-          
-          # create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          # security default-keychain -s $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          # import certificate to keychain
-          security import $DEVELOPER_ID_APPLICATION_CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security import $DEVELOPER_ID_INSTALLER_CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH_IOS ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH_IOS_DEV ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH_MACOS ~/Library/MobileDevice/Provisioning\ Profiles
-
-      - name: 🐦 Setup Shorebird
-        #if: inputs.build_mac || inputs.build_android || inputs.build_ios
-        if: inputs.build_android || inputs.build_ios
-        uses: shorebirdtech/setup-shorebird@v1
-        with:
-          cache: true
-
-      - name: Set Up Flutter maCOS
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'beta'
-          flutter-version: ${{ env.FLUTTER_VERSION_MAC }}
-
-      - name: Generate translation files
-        run: |
-          flutter pub global activate intl_utils;
-          flutter pub global run intl_utils:generate;
-
-      - name: 🚀 Shorebird Release macOS
-        if: inputs.build_mac && false
-        uses: shorebirdtech/shorebird-release@v1
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          platform: macos
-          args: "-- --obfuscate --split-debug-info=symbols --dart-define=VERIFYING_SHARED_SECRET=${{ secrets.VERIFYING_SHARED_SECRET }} --dart-define=REVENUECAT_API_KEY_IOS=${{ secrets.REVENUECAT_API_KEY_IOS }}"
-
-      - name: Flutter Release macOS
-        if: inputs.build_mac
-        run:
-          flutter build macos --release --obfuscate --split-debug-info=symbols --dart-define=VERIFYING_SHARED_SECRET=${{ secrets.VERIFYING_SHARED_SECRET }} --dart-define=REVENUECAT_API_KEY_IOS=${{ secrets.REVENUECAT_API_KEY_IOS }}
-
-      - name: Set Up Flutter Rest
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-
-      - name: Decode Keystore
-        if: inputs.build_android
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/android.keystore;
-          echo "${{ secrets.KEYSTORE_PROPERTIES }}" > android/keystore.properties;
-
-      - name: 🚀 Shorebird Release Android
-        if: inputs.build_android
-        uses: shorebirdtech/shorebird-release@v1
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          platform: android
-          args: "-- --obfuscate --split-debug-info=symbols --dart-define=REVENUECAT_API_KEY_ANDROID=${{ secrets.REVENUECAT_API_KEY_ANDROID }}"
-
-      - name: Extract latest changelog
-        id: changelog
-        run: |
-          chmod +x scripts/get_latest_changelog.sh
-          mkdir -p whatsnew
-          ./scripts/get_latest_changelog.sh | head -c 500 > whatsnew/whatsnew-en-US
-
-      - name: Generate release body
-        if: inputs.build_github
-        run: |
-          chmod +x scripts/generate_release_body.sh
-          ./scripts/generate_release_body.sh > /tmp/release_body.md
-
-      - name: 🚀 Shorebird Release iOS
-        if: inputs.build_ios
-        uses: shorebirdtech/shorebird-release@v1
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          platform: ios
-          args: "--export-options-plist ios/ExportOptions.plist -- --dart-define=VERIFYING_SHARED_SECRET=${{ secrets.VERIFYING_SHARED_SECRET }} --dart-define=REVENUECAT_API_KEY_IOS=${{ secrets.REVENUECAT_API_KEY_IOS }}"
-
-      - name: Prepare App Store authentication key
-        if: inputs.build_ios || inputs.build_mac
-        env:
-          API_KEY_BASE64: ${{ secrets.APPSTORE_API_KEY_FILE_BASE64 }}
-          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
-        run: |
-          mkdir -p ./private_keys;
-          printf %s "$API_KEY_BASE64" | base64 -D > "./private_keys/AuthKey_${APPSTORE_API_KEY}.p8";      
-
-      - name: Upload to Play Store
-        if: inputs.build_android
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.SERVICE_ACCOUNT_JSON }}
-          packageName: de.jonasbark.swiftcontrol
-          releaseFiles: build/app/outputs/bundle/release/app-release.aab
-          track: ${{ github.ref == 'refs/heads/main' && 'production' || 'alpha' }}
-          whatsNewDirectory: whatsnew
-
-      - name: Upload to macOS App Store
-        if: inputs.build_mac
-        env:
-          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
-          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-        run: |
-          productbuild --component "build/macos/Build/Products/Release/BikeControl.app" /Applications "BikeControl.pkg" --sign "3rd Party Mac Developer Installer: JONAS TASSILO BARK (UZRHKPVWN9)";    
-          xcrun altool --upload-app -f BikeControl.pkg -t osx --apiKey "$APPSTORE_API_KEY" --apiIssuer "$APPSTORE_API_ISSUER_ID"; 
-
-      - name: Upload to iOS App Store
-        if: inputs.build_ios
-        env:
-          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
-          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-        run: |
-          xcrun altool --upload-app -f build/ios/ipa/swift_play.ipa -t ios --apiKey "$APPSTORE_API_KEY" --apiIssuer "$APPSTORE_API_ISSUER_ID";
-
-
-        #10 Extract Version
-      - name: Extract version from pubspec.yaml
-        if: inputs.build_github
-        id: extract_version
-        run: |
-          version=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r')
-          echo "VERSION=$version" >> $GITHUB_ENV
-
-      - name: Upload Symbols
-        uses: actions/upload-artifact@v4
-        with:
-          overwrite: true
-          name: Symbols
-          path: symbols/
-
-        #13 Create Release
-      - name: Create Release
-        if: inputs.build_github
-        uses: ncipollo/release-action@v1
-        with:
-          artifacts: "build/app/outputs/flutter-apk/BikeControl.android.apk,build/macos/Build/Products/Release/BikeControl.macos.zip"
-          allowUpdates: true
-          prerelease: true
-          bodyFile: /tmp/release_body.md
-          tag: v${{ env.VERSION }}
-          token: ${{ secrets.TOKEN }}
-
   windows:
-    if: inputs.build_windows
-    name: Build & Release on Windows
-    runs-on: windows-2025
+    name: Build Windows Executable
+    runs-on: windows-latest
+    env:
+      FLUTTER_VERSION: ${{ env.FLUTTER_VERSION }}
 
     steps:
-      #1 Checkout Repository
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v3
         with:
           submodules: recursive
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: rename pubspec_overrides_ci.yaml to pubspec_overrides.yaml
+      - name: Rename pubspec_overrides_ci.yaml to pubspec_overrides.yaml (if present)
         shell: pwsh
         run: |
-            if (Test-Path pubspec_overrides_ci.yaml) {
-                Rename-Item -Path pubspec_overrides_ci.yaml -NewName pubspec_overrides.yaml
-            } else {
-                Write-Output "No pubspec_overrides_ci.yaml found, skipping rename."
-            }
-
-      - name: Extract version from pubspec.yaml (Windows)
-        shell: pwsh
-        run: |
-          $version = Select-String '^version: ' pubspec.yaml | ForEach-Object {
-            ($_ -split ' ')[1].Trim()
+          if (Test-Path pubspec_overrides_ci.yaml) {
+            Rename-Item -Path pubspec_overrides_ci.yaml -NewName pubspec_overrides.yaml
+          } else {
+            Write-Output "No pubspec_overrides_ci.yaml found, skipping rename."
           }
-          echo "VERSION=$version" >> $env:GITHUB_ENV
 
-      - name: 🐦 Setup Shorebird
-        uses: shorebirdtech/setup-shorebird@v1
-        with:
-          cache: true
+      - name: Extract version from pubspec.yaml
+        id: extract_version
+        shell: pwsh
+        run: |
+          $versionLine = Select-String '^version: ' pubspec.yaml | Select-Object -First 1
+          if ($versionLine) {
+            $version = ($versionLine -split '\s+')[1].Trim()
+            Write-Output "VERSION=$version" >> $env:GITHUB_ENV
+            Write-Output "Detected version: $version"
+          } else {
+            Write-Output "VERSION=unknown" >> $env:GITHUB_ENV
+          }
 
-      - name: Set Up Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           flutter-version: ${{ env.FLUTTER_VERSION }}
 
-      - name: Generate translation files
-        run: |
-          flutter pub global activate intl_utils;
-          flutter pub global run intl_utils:generate;
-
-      - name: 🚀 Shorebird Release Windows
-        uses: shorebirdtech/shorebird-release@v1
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          platform: windows
-          args: "-- --obfuscate --split-debug-info=symbols-win"
-
-      - name: Zip directory (Windows)
+      - name: Install dependencies
         shell: pwsh
         run: |
-  
-          $source = "C:\Windows\System32"
+          flutter pub get
+
+      - name: Generate translation files
+        shell: pwsh
+        run: |
+          flutter pub global activate intl_utils
+          flutter pub global run intl_utils:generate
+
+      - name: Build Windows (release)
+        shell: pwsh
+        run: |
+          flutter build windows --release --obfuscate --split-debug-info=symbols-win
+
+      - name: Copy common runtime DLLs into release folder (if present)
+        shell: pwsh
+        run: |
+          $source = "$env:SystemRoot\System32"
           $destination = "build\windows\x64\runner\Release"
-          
-          # List of required DLLs
           $dlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
-          
-          # Copy each file
           foreach ($dll in $dlls) {
             $srcPath = Join-Path $source $dll
             $destPath = Join-Path $destination $dll
-              
             if (Test-Path $srcPath) {
               Copy-Item -Path $srcPath -Destination $destPath -Force
               Write-Output "Copied $dll to $destination"
@@ -314,27 +80,25 @@ jobs:
               Write-Warning "$dll not found in $source"
             }
           }
-          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "build/windows/x64/runner/Release/bike_control.windows.zip"
 
-      - uses: microsoft/setup-msstore-cli@v1
-        if: false
+      - name: Zip Windows release folder
+        shell: pwsh
+        run: |
+          $releaseDir = "build\windows\x64\runner\Release"
+          $zipPath = "build\windows\x64\runner\Release\bike_control.windows.zip"
+          if (Test-Path $releaseDir) {
+            if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+            Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipPath
+            Write-Output "Created $zipPath"
+          } else {
+            Write-Error "Release directory not found: $releaseDir"
+            exit 1
+          }
 
-      - name: Configure the Microsoft Store CLI
-        if: false
-        run: msstore reconfigure --tenantId $ --clientId $ --clientSecret $ --sellerId $
-
-      - name: Create MSIX package
-        run: dart run msix:create
-
-      - name: Publish MSIX to the Microsoft Store
-        if: false
-        run: msstore publish -v "build/windows/x64/runner/Release/"
-
-      - name: Upload Artifacts
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          overwrite: true
-          name: Releases
+          name: bike_control-windows-${{ env.VERSION || 'unknown' }}
           path: |
-            build/windows/x64/runner/Release/bike_control.msix
-            symbols-win/
+            build/windows/x64/runner/Release/bike_control.windows.zip
+            build/windows/x64/runner/Release/**
