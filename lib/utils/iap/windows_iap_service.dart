@@ -15,8 +15,8 @@ import 'package:windows_iap/windows_iap.dart';
 /// you would need to use the Windows Store APIs through platform channels.
 class WindowsIAPService {
   static const String productId = '9NP42GS03Z26';
-  static const int trialDays = 7;
-  static const int dailyCommandLimit = 15;
+  static const int trialDays = -1;
+  static const int dailyCommandLimit = -1;
 
   static const String _purchaseStatusKey = 'iap_purchase_status_2';
   static const String _dailyCommandCountKey = 'iap_daily_command_count';
