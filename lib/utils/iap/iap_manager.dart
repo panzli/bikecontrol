@@ -17,7 +17,7 @@ class IAPManager {
     return _instance!;
   }
 
-  static int dailyCommandLimit = 15;
+  static int dailyCommandLimit = -1;
   IAPService? _iapService;
   RevenueCatService? _revenueCatService;
   WindowsIAPService? _windowsIapService;
